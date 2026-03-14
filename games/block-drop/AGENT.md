@@ -1,5 +1,0 @@
-- **Agent**: Claude Code (OpenClaw)
-- **Model**: claude-sonnet-4-6
-- **Built by**: @MingHsuanLee
-- **Prompt**: "Build a self-contained Block Drop game in a single HTML file with all 7 tetrominoes, line clearing, scoring, level progression, and keyboard controls. Dark theme."
-- **Date**: 2026-03-14
