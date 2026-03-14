@@ -1,0 +1,274 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-pr:
+    name: Validate Game Submission
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed game folders
+        id: changed
+        run: |
+          # Get list of changed files vs base branch
+          git fetch origin ${{ github.base_ref }}
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # Extract unique top-level game folders (e.g. games/my-game/...)
+          GAME_FOLDERS=$(echo "$CHANGED" | grep -E '^games/[^/]+/' | sed 's|^\(games/[^/]*/\).*|\1|' | sort -u | sed 's|/$||')
+          echo "Game folders: $GAME_FOLDERS"
+          echo "game_folders<<EOF" >> $GITHUB_OUTPUT
+          echo "$GAME_FOLDERS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check AGENT.md present
+        id: check_agent_md
+        run: |
+          MISSING=()
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            if [ ! -f "$folder/AGENT.md" ]; then
+              MISSING+=("$folder/AGENT.md")
+            fi
+          done <<< "${{ steps.changed.outputs.game_folders }}"
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "FAIL: Missing AGENT.md in: ${MISSING[*]}"
+            echo "agent_md_ok=false" >> $GITHUB_OUTPUT
+            echo "agent_md_missing=${MISSING[*]}" >> $GITHUB_OUTPUT
+          else
+            echo "PASS: All game folders have AGENT.md"
+            echo "agent_md_ok=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check self-contained (no disallowed CDN/tracking)
+        id: check_self_contained
+        run: |
+          # Disallowed patterns: tracking pixels, analytics scripts, non-reputable CDNs
+          DISALLOWED_PATTERNS=(
+            'google-analytics\.com'
+            'googletagmanager\.com'
+            'facebook\.com/tr'
+            'doubleclick\.net'
+            'hotjar\.com'
+            'mixpanel\.com'
+            'segment\.com'
+            'amplitude\.com'
+            'clarity\.ms'
+          )
+
+          # Reputable game lib CDNs that ARE allowed
+          ALLOWED_CDNS=(
+            'cdnjs\.cloudflare\.com'
+            'unpkg\.com'
+            'jsdelivr\.net'
+            'cdn\.jsdelivr\.net'
+            'phaser\.io'
+            'threejs\.org'
+            'babylonjs\.com'
+          )
+
+          VIOLATIONS=()
+
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            for pattern in "${DISALLOWED_PATTERNS[@]}"; do
+              MATCHES=$(grep -rEl "$pattern" "$folder" 2>/dev/null || true)
+              if [ -n "$MATCHES" ]; then
+                VIOLATIONS+=("$pattern in $MATCHES")
+              fi
+            done
+          done <<< "${{ steps.changed.outputs.game_folders }}"
+
+          if [ ${#VIOLATIONS[@]} -gt 0 ]; then
+            echo "FAIL: External tracking/disallowed CDN found:"
+            printf '%s\n' "${VIOLATIONS[@]}"
+            echo "self_contained_ok=false" >> $GITHUB_OUTPUT
+            {
+              echo "violations<<EOF"
+              printf '%s\n' "${VIOLATIONS[@]}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "PASS: No disallowed external dependencies found"
+            echo "self_contained_ok=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for secrets/tokens
+        id: check_secrets
+        run: |
+          # Use trufflehog or basic regex patterns for common secret patterns
+          SECRET_PATTERNS=(
+            'sk-[a-zA-Z0-9]{20,}'
+            'ghp_[a-zA-Z0-9]{36}'
+            'gho_[a-zA-Z0-9]{36}'
+            'AKIA[0-9A-Z]{16}'
+            'AIza[0-9A-Za-z\-_]{35}'
+            'Bearer [a-zA-Z0-9\-_\.]{20,}'
+            'password\s*=\s*["\x27][^"\x27]{8,}'
+            'api[_-]?key\s*=\s*["\x27][^"\x27]{8,}'
+          )
+
+          SECRETS_FOUND=()
+
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            for pattern in "${SECRET_PATTERNS[@]}"; do
+              MATCHES=$(grep -rEil "$pattern" "$folder" 2>/dev/null || true)
+              if [ -n "$MATCHES" ]; then
+                SECRETS_FOUND+=("Pattern '$pattern' in: $MATCHES")
+              fi
+            done
+          done <<< "${{ steps.changed.outputs.game_folders }}"
+
+          if [ ${#SECRETS_FOUND[@]} -gt 0 ]; then
+            echo "FAIL: Possible secrets/tokens found:"
+            printf '%s\n' "${SECRETS_FOUND[@]}"
+            echo "secrets_ok=false" >> $GITHUB_OUTPUT
+            {
+              echo "secrets_found<<EOF"
+              printf '%s\n' "${SECRETS_FOUND[@]}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "PASS: No secrets or tokens detected"
+            echo "secrets_ok=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check index.html present and valid HTML
+        id: check_index_html
+        run: |
+          # Install html-validator-cli (lightweight, no Java dependency)
+          npm install -g @html-validate/cli 2>/dev/null || true
+
+          MISSING_INDEX=()
+          INVALID_HTML=()
+
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+
+            if [ ! -f "$folder/index.html" ]; then
+              MISSING_INDEX+=("$folder/index.html")
+              continue
+            fi
+
+            # Basic structural validation: must have <html>, <head>, <body> tags
+            FILE="$folder/index.html"
+            if ! grep -qi '<html' "$FILE"; then
+              INVALID_HTML+=("$FILE: missing <html> tag")
+            elif ! grep -qi '<head' "$FILE"; then
+              INVALID_HTML+=("$FILE: missing <head> tag")
+            elif ! grep -qi '<body' "$FILE"; then
+              INVALID_HTML+=("$FILE: missing <body> tag")
+            elif ! grep -qi '<!DOCTYPE' "$FILE"; then
+              INVALID_HTML+=("$FILE: missing DOCTYPE declaration")
+            fi
+          done <<< "${{ steps.changed.outputs.game_folders }}"
+
+          ERRORS=("${MISSING_INDEX[@]}" "${INVALID_HTML[@]}")
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "FAIL: index.html issues found:"
+            printf '%s\n' "${ERRORS[@]}"
+            echo "index_html_ok=false" >> $GITHUB_OUTPUT
+            {
+              echo "index_html_errors<<EOF"
+              printf '%s\n' "${ERRORS[@]}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "PASS: All game folders have valid index.html"
+            echo "index_html_ok=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post PR comment with results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const agentMdOk = '${{ steps.check_agent_md.outputs.agent_md_ok }}' === 'true';
+            const selfContainedOk = '${{ steps.check_self_contained.outputs.self_contained_ok }}' === 'true';
+            const secretsOk = '${{ steps.check_secrets.outputs.secrets_ok }}' === 'true';
+            const indexHtmlOk = '${{ steps.check_index_html.outputs.index_html_ok }}' === 'true';
+            const allPassed = agentMdOk && selfContainedOk && secretsOk && indexHtmlOk;
+
+            const tick = '✅';
+            const cross = '❌';
+
+            const body = `## 🎮 PR Validation Results
+
+            | Check | Status |
+            |-------|--------|
+            | \`AGENT.md\` present | ${agentMdOk ? tick + ' Pass' : cross + ' Fail'} |
+            | \`index.html\` present & valid | ${indexHtmlOk ? tick + ' Pass' : cross + ' Fail'} |
+            | Self-contained (no tracking/bad CDNs) | ${selfContainedOk ? tick + ' Pass' : cross + ' Fail'} |
+            | No secrets/tokens committed | ${secretsOk ? tick + ' Pass' : cross + ' Fail'} |
+
+            ${allPassed ? '**All checks passed! 🎉**' : '**One or more checks failed. Please fix before merging.**'}
+
+            ${!agentMdOk ? '\n### Missing AGENT.md\n```\n${{ steps.check_agent_md.outputs.agent_md_missing }}\n```' : ''}
+            ${!indexHtmlOk ? '\n### index.html Issues\n```\n${{ steps.check_index_html.outputs.index_html_errors }}\n```' : ''}
+            ${!selfContainedOk ? '\n### Disallowed External Dependencies\n```\n${{ steps.check_self_contained.outputs.violations }}\n```' : ''}
+            ${!secretsOk ? '\n### Possible Secrets Detected\n```\n${{ steps.check_secrets.outputs.secrets_found }}\n```' : ''}
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail job if any check failed
+        if: |
+          steps.check_agent_md.outputs.agent_md_ok != 'true' ||
+          steps.check_index_html.outputs.index_html_ok != 'true' ||
+          steps.check_self_contained.outputs.self_contained_ok != 'true' ||
+          steps.check_secrets.outputs.secrets_ok != 'true'
+        run: |
+          echo "One or more validation checks failed."
+          exit 1
+
+  notify-on-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: validate-pr
+    if: failure()
+    steps:
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+          REPO="${{ github.repository }}"
+
+          MESSAGE="⚠️ *PR Validation Failed*
+
+          Repo: \`${REPO}\`
+          PR: [${PR_TITLE}](${PR_URL})
+          Author: @${PR_AUTHOR}
+
+          One or more checks failed — AGENT.md missing, disallowed CDN/tracking, or possible secrets detected.
+          Please review the PR."
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d parse_mode="Markdown" \
+            -d disable_web_page_preview="true" \
+            -d text="${MESSAGE}"
