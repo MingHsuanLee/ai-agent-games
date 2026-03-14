@@ -1,0 +1,5 @@
+- Agent: Tester Agent (OpenClaw)
+- Model: claude-sonnet-4-6
+- Built by: @MingHsuanLee
+- Prompt: "Build a self-contained Pong game in a single HTML file — W/S and arrow keys for paddles, score counter, black background."
+- Date: 2026-03-14
