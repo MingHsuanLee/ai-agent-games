@@ -452,113 +452,398 @@ function checkWin(r, c, player) {
   return null;
 }
 
-// ── AI ───────────────────────────────────────────────────────
-// Threat-based evaluation: score patterns, pick best move
-const SCORES = {
-  FIVE: 1e8,
-  OPEN4: 1e6,   // .XXXX.
-  HALF4: 1e4,   // XXXX blocked one end
-  OPEN3: 5000,
-  HALF3: 500,
-  OPEN2: 100,
-  ONE: 10,
+// ── AI — Upgraded Engine ─────────────────────────────────────
+// Threat scores (asymmetric: attack > defense to prefer winning)
+const S = {
+  FIVE:         100000000,
+  LIVE_FOUR:     10000000,  // .XXXX. — unstoppable
+  DEAD_FOUR:      1000000,  // _XXXX or XXXX_ — must block
+  BROKEN_FOUR:     500000,  // XX_XX / X_XXX / XXX_X
+  DOUBLE_THREE:    500000,  // fork of two live-threes
+  LIVE_THREE:       50000,  // .XXX.
+  DEAD_THREE:        5000,
+  BROKEN_THREE:      2000,  // _XX_X_ / _X_XX_
+  LIVE_TWO:           500,
+  DEAD_TWO:            50,
+  CENTER_BONUS:        10,
 };
 
-function evalLine(arr, player) {
+const DIRS = [[0,1],[1,0],[1,1],[1,-1]];
+const CENTER = Math.floor(SIZE / 2);
+
+// ── Pattern scorer ────────────────────────────────────────────
+// Extracts a window of 9 cells centred on (r,c) along each direction,
+// then scores every threat pattern for `player` in that window.
+function scoreCell(r, c, player) {
+  if (board[r][c] !== EMPTY) return -Infinity;
+  const opp = player === BLACK ? WHITE : BLACK;
+  let total = 0;
+  let liveThrees = 0;
+
+  for (const [dr, dc] of DIRS) {
+    // Build a window of 9 cells (-4..+4) around the candidate
+    const w = [];
+    for (let d = -4; d <= 4; d++) {
+      const nr = r + dr * d, nc = c + dc * d;
+      if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) w.push(opp); // wall = blocker
+      else w.push(board[nr][nc]);
+    }
+    // Temporarily place stone at centre (index 4)
+    w[4] = player;
+    total += evalWindow(w, player);
+    if (evalWindowLiveThree(w, player)) liveThrees++;
+  }
+
+  // Fork bonus: two or more live-three axes → double-three
+  if (liveThrees >= 2) total += S.DOUBLE_THREE;
+
+  // Mild centre-proximity bonus
+  total += S.CENTER_BONUS * (1 - (Math.abs(r - CENTER) + Math.abs(c - CENTER)) / (SIZE * 2));
+
+  return total;
+}
+
+// Score all patterns in a 9-wide window (already has the candidate placed at index 4)
+function evalWindow(w, player) {
   const opp = player === BLACK ? WHITE : BLACK;
   let score = 0;
-  const n = arr.length;
-  for (let i = 0; i < n; i++) {
-    if (arr[i] !== player) continue;
-    // Count consecutive
-    let len = 1;
-    while (i + len < n && arr[i + len] === player) len++;
-    const before = i > 0 ? arr[i-1] : opp;
-    const after = i + len < n ? arr[i+len] : opp;
-    const openL = before === EMPTY;
-    const openR = after === EMPTY;
-    if (len >= 5) score += SCORES.FIVE;
-    else if (len === 4) score += (openL && openR) ? SCORES.OPEN4 : (openL || openR) ? SCORES.HALF4 : 0;
-    else if (len === 3) score += (openL && openR) ? SCORES.OPEN3 : (openL || openR) ? SCORES.HALF3 : 0;
-    else if (len === 2) score += (openL && openR) ? SCORES.OPEN2 : 0;
-    else score += SCORES.ONE;
-    i += len - 1;
-  }
-  return score;
-}
 
-function evalCell(r, c, player) {
-  if (board[r][c] !== EMPTY) return -1;
-  const dirs = [[0,1],[1,0],[1,1],[1,-1]];
-  let score = 0;
-  for (const [dr, dc] of dirs) {
-    const arr = [];
-    for (let d = -4; d <= 4; d++) {
-      const nr = r + dr*d, nc = c + dc*d;
-      if (nr<0||nr>=SIZE||nc<0||nc>=SIZE) arr.push(player===BLACK?WHITE:BLACK); // wall = blocker
-      else arr.push(board[nr][nc]);
+  // Slide a sub-window of width 5 over the 9-cell window
+  for (let start = 0; start <= 4; start++) {
+    const seg = w.slice(start, start + 5);
+    if (seg.includes(opp)) continue; // blocked by opponent — skip
+
+    const cnt = seg.filter(x => x === player).length;
+    const emp = seg.filter(x => x === EMPTY).length;
+
+    if (cnt + emp < 5) continue; // can't form 5 here
+
+    if (cnt === 5) { score += S.FIVE; continue; }
+
+    // Check left/right openness relative to this 5-window
+    const leftOpen  = start > 0 ? w[start - 1] === EMPTY : false;
+    const rightOpen = start + 5 < w.length ? w[start + 5] === EMPTY : false;
+
+    if (cnt === 4) {
+      if (leftOpen && rightOpen)      score += S.LIVE_FOUR;
+      else if (leftOpen || rightOpen) score += S.DEAD_FOUR;
+      else {
+        // Check for broken four: pattern like XX_XX centred here
+        const gaps = seg.reduce((a,x,i) => x === EMPTY ? a.concat(i) : a, []);
+        if (gaps.length === 1) score += S.BROKEN_FOUR;
+      }
+    } else if (cnt === 3) {
+      if (leftOpen && rightOpen)      score += S.LIVE_THREE;
+      else if (leftOpen || rightOpen) score += S.DEAD_THREE;
+    } else if (cnt === 2) {
+      if (leftOpen && rightOpen)      score += S.LIVE_TWO;
+      else if (leftOpen || rightOpen) score += S.DEAD_TWO;
     }
-    score += evalLine(arr, player) * 1.1;       // attack weight
-    score += evalLine(arr, player===BLACK?WHITE:BLACK); // defense
   }
+
+  // Broken patterns in the full 9-wide window
+  score += brokenPatterns(w, player);
+
   return score;
 }
 
+function evalWindowLiveThree(w, player) {
+  const opp = player === BLACK ? WHITE : BLACK;
+  for (let start = 0; start <= 4; start++) {
+    const seg = w.slice(start, start + 5);
+    if (seg.includes(opp)) continue;
+    const cnt = seg.filter(x => x === player).length;
+    if (cnt !== 3) continue;
+    const leftOpen  = start > 0 ? w[start - 1] === EMPTY : false;
+    const rightOpen = start + 5 < w.length ? w[start + 5] === EMPTY : false;
+    if (leftOpen && rightOpen) return true;
+  }
+  return false;
+}
+
+// Detect broken-four / broken-three gap patterns in 9-wide window
+function brokenPatterns(w, player) {
+  const opp = player === BLACK ? WHITE : BLACK;
+  let score = 0;
+  const s = w.join('').replace(/0/g,'E').replace(/1/g,'B').replace(/2/g,'W');
+  const p = player === BLACK ? 'B' : 'W';
+  const o = player === BLACK ? 'W' : 'B';
+
+  // Broken four: X_XXX, XXX_X, XX_XX (no opponent adjacent)
+  const bf = [`${p}E${p}${p}${p}`, `${p}${p}${p}E${p}`, `${p}${p}E${p}${p}`];
+  for (const pat of bf) {
+    if (s.includes(pat) && !s.includes(o + pat) && !s.includes(pat + o)) {
+      score += S.BROKEN_FOUR;
+    }
+  }
+
+  // Broken three: _XX_X_ _X_XX_
+  const bt = [`E${p}${p}E${p}E`, `E${p}E${p}${p}E`];
+  for (const pat of bt) {
+    if (s.includes(pat)) score += S.BROKEN_THREE;
+  }
+
+  return score;
+}
+
+// ── Candidate generation ──────────────────────────────────────
 function getCandidates() {
-  // Only consider cells adjacent to existing stones (within 2)
-  const candidates = new Set();
+  const seen = new Uint8Array(SIZE * SIZE);
+  const result = [];
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
-      if (board[r][c] !== EMPTY) {
-        for (let dr = -2; dr <= 2; dr++) {
-          for (let dc = -2; dc <= 2; dc++) {
-            const nr = r+dr, nc = c+dc;
-            if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE&&board[nr][nc]===EMPTY) {
-              candidates.add(nr * SIZE + nc);
-            }
+      if (board[r][c] === EMPTY) continue;
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          const nr = r + dr, nc = c + dc;
+          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+          const key = nr * SIZE + nc;
+          if (!seen[key] && board[nr][nc] === EMPTY) {
+            seen[key] = 1;
+            result.push([nr, nc]);
           }
         }
       }
     }
   }
-  if (candidates.size === 0) candidates.add(7 * SIZE + 7); // first move: center
-  return [...candidates].map(k => [Math.floor(k/SIZE), k%SIZE]);
+  if (result.length === 0) result.push([CENTER, CENTER]);
+  return result;
 }
 
-function doAiMove() {
-  aiThinking = true;
-  let best = -Infinity, br = 7, bc = 7;
+// ── Zobrist transposition table ───────────────────────────────
+const ZT = (() => {
+  const t = new Array(SIZE * SIZE * 3);
+  for (let i = 0; i < t.length; i++) {
+    t[i] = (Math.random() * 0xFFFFFFFF) >>> 0;
+  }
+  return t;
+})();
+let zhash = 0;
+const TT = new Map();
+
+function ztUpdate(r, c, player, remove = false) {
+  const v = ZT[(r * SIZE + c) * 3 + player];
+  zhash ^= v;
+}
+
+function ztReset() {
+  zhash = 0;
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (board[r][c] !== EMPTY) zhash ^= ZT[(r * SIZE + c) * 3 + board[r][c]];
+  TT.clear();
+}
+
+// ── Heuristic board evaluation ────────────────────────────────
+function evalBoard(maxPlayer) {
+  let score = 0;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board[r][c] === EMPTY) continue;
+      const v = scoreCell(r, c, board[r][c]);
+      score += board[r][c] === maxPlayer ? v : -v;
+    }
+  }
+  return score;
+}
+
+// ── Alpha-Beta Minimax ────────────────────────────────────────
+const WIN_SCORE = S.FIVE;
+
+function alphabeta(depth, alpha, beta, isMax, maxPlayer) {
+  // Transposition table lookup
+  const ttKey = `${zhash}:${depth}:${isMax ? 1 : 0}`;
+  if (TT.has(ttKey)) {
+    const cached = TT.get(ttKey);
+    if (cached.flag === 'exact') return cached.score;
+    if (cached.flag === 'lower') alpha = Math.max(alpha, cached.score);
+    if (cached.flag === 'upper') beta  = Math.min(beta,  cached.score);
+    if (alpha >= beta) return cached.score;
+  }
+
+  const player = isMax ? maxPlayer : (maxPlayer === BLACK ? WHITE : BLACK);
+
+  if (depth === 0) {
+    const s = evalBoard(maxPlayer);
+    TT.set(ttKey, { score: s, flag: 'exact' });
+    return s;
+  }
 
   const candidates = getCandidates();
 
-  // Difficulty: easy = random from top-5, medium = top-1 with occasional miss, hard = pure best
-  for (const [r, c] of candidates) {
-    const s = evalCell(r, c, WHITE);
-    if (s > best) { best = s; br = r; bc = c; }
+  if (candidates.length === 0) return 0;
+
+  // Move ordering: sort by heuristic score for better pruning
+  const ordered = candidates
+    .map(([r, c]) => ({ r, c, s: scoreCell(r, c, player) + scoreCell(r, c, player === BLACK ? WHITE : BLACK) * 0.9 }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 20); // cap to top-20 for speed
+
+  let bestScore = isMax ? -Infinity : Infinity;
+  let flag = 'upper';
+
+  for (const { r, c } of ordered) {
+    board[r][c] = player;
+    ztUpdate(r, c, player);
+
+    // Check immediate win
+    const won = checkWin(r, c, player);
+
+    let score;
+    if (won) {
+      score = isMax ? WIN_SCORE + depth * 1000 : -(WIN_SCORE + depth * 1000);
+    } else {
+      score = alphabeta(depth - 1, alpha, beta, !isMax, maxPlayer);
+    }
+
+    board[r][c] = EMPTY;
+    ztUpdate(r, c, player); // XOR again to undo
+
+    if (isMax) {
+      if (score > bestScore) { bestScore = score; flag = 'exact'; }
+      alpha = Math.max(alpha, bestScore);
+    } else {
+      if (score < bestScore) { bestScore = score; flag = 'exact'; }
+      beta = Math.min(beta, bestScore);
+    }
+
+    if (beta <= alpha) {
+      flag = isMax ? 'lower' : 'upper';
+      break;
+    }
+
+    if (won) break; // winning move found — no need to continue
   }
 
-  if (aiDiff === 'easy') {
-    // Pick randomly from top candidates (adds mistakes)
-    const sorted = candidates.map(([r,c]) => ({r,c,s:evalCell(r,c,WHITE)})).sort((a,b)=>b.s-a.s);
-    const pool = sorted.slice(0, Math.min(6, sorted.length));
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    br = pick.r; bc = pick.c;
-  } else if (aiDiff === 'medium') {
-    // 15% chance to pick from top-3 randomly
-    if (Math.random() < 0.15) {
-      const sorted = candidates.map(([r,c]) => ({r,c,s:evalCell(r,c,WHITE)})).sort((a,b)=>b.s-a.s);
-      const pool = sorted.slice(0, Math.min(3, sorted.length));
+  TT.set(ttKey, { score: bestScore, flag });
+  return bestScore;
+}
+
+// ── Priority threat checks ────────────────────────────────────
+// Returns [r,c] if a forced move exists, else null
+function findForcedMove(player) {
+  const opp = player === BLACK ? WHITE : BLACK;
+  const cands = getCandidates();
+
+  // 1. Win in one
+  for (const [r, c] of cands) {
+    board[r][c] = player;
+    const won = checkWin(r, c, player);
+    board[r][c] = EMPTY;
+    if (won) return [r, c];
+  }
+
+  // 2. Block opponent's immediate win
+  for (const [r, c] of cands) {
+    board[r][c] = opp;
+    const won = checkWin(r, c, opp);
+    board[r][c] = EMPTY;
+    if (won) return [r, c];
+  }
+
+  // 3. Create live-four or dead-four (unstoppable next move)
+  for (const [r, c] of cands) {
+    const s = scoreCell(r, c, player);
+    if (s >= S.LIVE_FOUR) return [r, c];
+  }
+
+  // 4. Block opponent's live-four / dead-four
+  for (const [r, c] of cands) {
+    const s = scoreCell(r, c, opp);
+    if (s >= S.LIVE_FOUR) return [r, c];
+  }
+
+  return null;
+}
+
+// ── Main AI entry point ───────────────────────────────────────
+function doAiMove() {
+  aiThinking = true;
+  updateUI();
+
+  setTimeout(() => {
+    // First move: centre
+    if (moveHistory.length === 0) {
+      finishAiMove(CENTER, CENTER);
+      return;
+    }
+    if (moveHistory.length === 1) {
+      // Second move: one step from centre
+      const [fr, fc] = [CENTER, CENTER];
+      if (board[fr][fc] === EMPTY) { finishAiMove(fr, fc); return; }
+      finishAiMove(fr + 1, fc);
+      return;
+    }
+
+    // Priority forced-move check (fast path)
+    const forced = findForcedMove(WHITE);
+    if (forced && aiDiff !== 'easy') {
+      finishAiMove(forced[0], forced[1]);
+      return;
+    }
+
+    ztReset();
+    const candidates = getCandidates();
+
+    // Ordered candidates by combined attack+defense heuristic
+    const ordered = candidates
+      .map(([r, c]) => ({
+        r, c,
+        s: scoreCell(r, c, WHITE) + scoreCell(r, c, BLACK) * 0.85
+      }))
+      .sort((a, b) => b.s - a.s);
+
+    // Depth by difficulty
+    const depth = aiDiff === 'hard' ? 5 : aiDiff === 'medium' ? 4 : 1;
+    const topN  = aiDiff === 'hard' ? 15 : aiDiff === 'medium' ? 12 : 8;
+
+    let bestScore = -Infinity, br = ordered[0].r, bc = ordered[0].c;
+
+    if (aiDiff === 'easy') {
+      // Easy: pick randomly from top-6 by heuristic only (no minimax)
+      const pool = ordered.slice(0, Math.min(6, ordered.length));
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      finishAiMove(pick.r, pick.c);
+      return;
+    }
+
+    // Medium / Hard: alpha-beta minimax
+    const searchCands = ordered.slice(0, topN);
+    for (const { r, c } of searchCands) {
+      board[r][c] = WHITE;
+      ztUpdate(r, c, WHITE);
+      const won = checkWin(r, c, WHITE);
+      const score = won
+        ? S.FIVE + depth * 1000
+        : alphabeta(depth - 1, -Infinity, Infinity, false, WHITE);
+      board[r][c] = EMPTY;
+      ztUpdate(r, c, WHITE);
+
+      if (score > bestScore) {
+        bestScore = score;
+        br = r; bc = c;
+      }
+      if (won) break;
+    }
+
+    // Medium: 12% chance to pick from top-3 (adds human-feeling imperfection)
+    if (aiDiff === 'medium' && Math.random() < 0.12) {
+      const pool = searchCands.slice(0, 3);
       const pick = pool[Math.floor(Math.random() * pool.length)];
       br = pick.r; bc = pick.c;
     }
-  }
 
+    finishAiMove(br, bc);
+  }, 10);
+}
+
+function finishAiMove(r, c) {
   aiThinking = false;
-  board[br][bc] = WHITE;
-  moveHistory.push({ r: br, c: bc, player: WHITE });
+  board[r][c] = WHITE;
+  moveHistory.push({ r, c, player: WHITE });
   updateHistory();
 
-  const line = checkWin(br, bc, WHITE);
+  const line = checkWin(r, c, WHITE);
   if (line) {
     gameOver = { winner: WHITE, line };
     current = WHITE;
