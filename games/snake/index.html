@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐍 Snake</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f0f13; color: #e8e8f0; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 1rem; }
+  h1 { font-size: 1.5rem; }
+  #info { display: flex; gap: 2rem; font-size: 0.9rem; color: #8888aa; }
+  #info span { color: #6c63ff; font-weight: 700; font-size: 1.1rem; }
+  canvas { border: 2px solid #2a2a3a; border-radius: 8px; touch-action: none; }
+  #msg { font-size: 1rem; color: #8888aa; text-align: center; min-height: 1.5rem; }
+  button { background: #6c63ff; color: #fff; border: none; border-radius: 8px; padding: 0.6rem 1.5rem; font-size: 0.9rem; cursor: pointer; }
+  button:hover { background: #5a52e0; }
+</style>
+</head>
+<body>
+<h1>🐍 Snake</h1>
+<div id="info">Score: <span id="score">0</span> &nbsp; High: <span id="high">0</span></div>
+<canvas id="c" width="400" height="400"></canvas>
+<div id="msg">Press any arrow key or tap to start</div>
+<button onclick="reset()">New Game</button>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const COLS = 20, ROWS = 20, SZ = 20;
+let snake, dir, nextDir, food, score, high = 0, running = false, started = false, loop;
+
+function reset() {
+  snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+  dir = {x:1,y:0}; nextDir = {x:1,y:0};
+  score = 0; running = true; started = false;
+  placeFood();
+  document.getElementById('score').textContent = 0;
+  document.getElementById('msg').textContent = 'Press arrow key or tap to start';
+  clearInterval(loop);
+}
+
+function placeFood() {
+  let pos;
+  do { pos = {x: Math.floor(Math.random()*COLS), y: Math.floor(Math.random()*ROWS)}; }
+  while (snake.some(s => s.x===pos.x && s.y===pos.y));
+  food = pos;
+}
+
+function tick() {
+  if (!running) return;
+  dir = nextDir;
+  const head = {x: snake[0].x+dir.x, y: snake[0].y+dir.y};
+  if (head.x<0||head.x>=COLS||head.y<0||head.y>=ROWS||snake.some(s=>s.x===head.x&&s.y===head.y)) {
+    running = false;
+    if (score > high) { high = score; document.getElementById('high').textContent = high; }
+    document.getElementById('msg').textContent = `Game Over! Score: ${score} — Click New Game`;
+    draw(); return;
+  }
+  snake.unshift(head);
+  if (head.x===food.x && head.y===food.y) {
+    score++; document.getElementById('score').textContent = score; placeFood();
+  } else snake.pop();
+  draw();
+}
+
+function draw() {
+  ctx.fillStyle = '#0f0f13'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  // Grid
+  ctx.strokeStyle = '#1a1a24';
+  for (let i=0;i<=COLS;i++) { ctx.beginPath(); ctx.moveTo(i*SZ,0); ctx.lineTo(i*SZ,canvas.height); ctx.stroke(); }
+  for (let i=0;i<=ROWS;i++) { ctx.beginPath(); ctx.moveTo(0,i*SZ); ctx.lineTo(canvas.width,i*SZ); ctx.stroke(); }
+  // Food
+  ctx.fillStyle = '#ff6584';
+  ctx.beginPath(); ctx.arc(food.x*SZ+SZ/2, food.y*SZ+SZ/2, SZ/2-2, 0, Math.PI*2); ctx.fill();
+  // Snake
+  snake.forEach((s,i) => {
+    ctx.fillStyle = i===0 ? '#6c63ff' : `hsl(${250-i*3},70%,${60-i}%)`;
+    ctx.beginPath(); ctx.roundRect(s.x*SZ+1,s.y*SZ+1,SZ-2,SZ-2,4); ctx.fill();
+  });
+}
+
+function setDir(dx, dy) {
+  if (dx===dir.x*-1 && dy===dir.y*-1) return;
+  nextDir = {x:dx,y:dy};
+  if (!started) { started=true; loop=setInterval(tick,120); document.getElementById('msg').textContent=''; }
+}
+
+document.addEventListener('keydown', e => {
+  const map = {ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};
+  if (map[e.key]) { e.preventDefault(); const [dx,dy]=map[e.key]; setDir(dx,dy); }
+});
+
+// Touch swipe
+let tx, ty;
+canvas.addEventListener('touchstart', e => { tx=e.touches[0].clientX; ty=e.touches[0].clientY; e.preventDefault(); }, {passive:false});
+canvas.addEventListener('touchend', e => {
+  const dx=e.changedTouches[0].clientX-tx, dy=e.changedTouches[0].clientY-ty;
+  if (Math.abs(dx)>Math.abs(dy)) setDir(dx>0?1:-1,0);
+  else setDir(0,dy>0?1:-1);
+  e.preventDefault();
+}, {passive:false});
+
+reset(); draw();
+</script>
+</body>
+</html>

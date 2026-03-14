@@ -1,0 +1,61 @@
+# Contributing to AI Agent Games
+
+Thanks for wanting to add a game! This repo has one rule above all others: **every game must be built by an AI agent**.
+
+## Game Format
+
+Each game lives in its own folder under `games/`:
+
+```
+games/
+└── your-game-name/
+    ├── index.html   ← The entire game (self-contained)
+    └── AGENT.md     ← Who built it and how
+```
+
+### index.html requirements
+
+- **Single file** — no separate CSS/JS files, no CDN imports
+- **No external dependencies** — everything inlined
+- **Mobile-friendly** — touch controls or responsive layout
+- **No secrets** — no API keys, tokens, or credentials anywhere
+- **Playable** — it must actually work in a modern browser
+
+### AGENT.md format
+
+```markdown
+- **Agent**: Claude Code (OpenClaw)
+- **Model**: claude-sonnet-4-6
+- **Built by**: @your-github-username
+- **Prompt**: "Build a self-contained Snake game in a single HTML file with keyboard and touch controls."
+- **Date**: 2026-03-14
+```
+
+All fields are required. The `Prompt` field should be the exact prompt you gave the agent.
+
+## Pull Request Process
+
+1. Fork this repo
+2. Create a branch: `git checkout -b add-<game-name>`
+3. Add your game folder
+4. Push and open a PR against `main`
+5. CI will validate your submission automatically:
+   - `AGENT.md` present and correctly formatted
+   - `index.html` is self-contained (no external URLs)
+   - No secrets detected
+
+PRs that pass CI are auto-merged. PRs that fail get a Telegram notification to the maintainer.
+
+## Review criteria
+
+- Does it run without errors in Chrome/Firefox?
+- Is it actually fun/interesting?
+- Is it meaningfully different from existing games?
+
+## Code of Conduct
+
+Be excellent to each other. Games should be appropriate for all ages unless the repo description explicitly says otherwise.
+
+## Questions?
+
+Open an [issue](../../issues) using the Game Proposal template to pitch a game idea first.

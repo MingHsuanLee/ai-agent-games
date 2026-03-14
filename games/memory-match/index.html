@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🃏 Memory Match</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f0f13; color: #e8e8f0; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 1rem; padding: 1rem; }
+  h1 { font-size: 1.4rem; }
+  #hud { display: flex; gap: 2rem; font-size: 0.9rem; color: #8888aa; }
+  #hud span { color: #6c63ff; font-weight: 700; font-size: 1.1rem; }
+  #grid { display: grid; gap: 10px; }
+  .card { width: 70px; height: 70px; perspective: 600px; cursor: pointer; }
+  .card-inner { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.4s; }
+  .card.flipped .card-inner, .card.matched .card-inner { transform: rotateY(180deg); }
+  .face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+  .front { background: #1a1a24; border: 2px solid #2a2a3a; }
+  .front::after { content: '?'; font-size: 1.5rem; color: #2a2a3a; }
+  .back { background: #252535; border: 2px solid #6c63ff; transform: rotateY(180deg); }
+  .card.matched .back { background: #1a3a2a; border-color: #43e97b; }
+  #msg { font-size: 1rem; color: #ff6584; min-height: 1.4rem; text-align: center; }
+  button { background: #6c63ff; color: #fff; border: none; border-radius: 8px; padding: 0.5rem 1.5rem; cursor: pointer; font-size: 0.9rem; }
+  button:hover { background: #5a52e0; }
+  select { background: #1a1a24; color: #e8e8f0; border: 1px solid #2a2a3a; border-radius: 6px; padding: 0.4rem 0.8rem; font-size: 0.85rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>🃏 Memory Match</h1>
+<div id="hud">Moves: <span id="moves">0</span> &nbsp; Pairs: <span id="pairs">0</span>/<span id="total">0</span> &nbsp; ⏱<span id="timer">0s</span></div>
+<div style="display:flex;gap:0.75rem;align-items:center">
+  <select id="size" onchange="init()"><option value="4">4×4 (Easy)</option><option value="6" selected>6×4 (Medium)</option><option value="6x6">6×6 (Hard)</option></select>
+  <button onclick="init()">New Game</button>
+</div>
+<div id="grid"></div>
+<div id="msg"></div>
+<script>
+const EMOJIS='🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐸🐵🐔🐧🦆🦅🦉🦇🐺🐗🐴🦄🐝🐛🦋🐌🐞🐜🦗🦂🐢🦎🐍🦕🦖🦑'.split('');
+let cards,flipped,matched,moves,pairCount,timerInt,elapsed,lock;
+
+function init() {
+  const s=document.getElementById('size').value;
+  const [cols,rows]=s==='4'?[4,4]:s==='6x6'?[6,6]:[6,4];
+  pairCount=cols*rows/2;
+  document.getElementById('total').textContent=pairCount;
+  const emojis=[...EMOJIS].sort(()=>Math.random()-0.5).slice(0,pairCount);
+  cards=[...emojis,...emojis].sort(()=>Math.random()-0.5).map((e,i)=>({id:i,emoji:e,state:'hidden'}));
+  flipped=[]; matched=0; moves=0; elapsed=0; lock=false;
+  document.getElementById('moves').textContent=0;
+  document.getElementById('pairs').textContent=0;
+  document.getElementById('msg').textContent='';
+  document.getElementById('timer').textContent='0s';
+  clearInterval(timerInt);
+  timerInt=setInterval(()=>{elapsed++;document.getElementById('timer').textContent=elapsed+'s';},1000);
+  render(cols);
+}
+
+function render(cols) {
+  const grid=document.getElementById('grid');
+  grid.style.gridTemplateColumns=`repeat(${cols},70px)`;
+  grid.innerHTML='';
+  cards.forEach((c,i)=>{
+    const div=document.createElement('div');
+    div.className='card'+(c.state==='flipped'?' flipped':c.state==='matched'?' matched':'');
+    div.innerHTML=`<div class="card-inner"><div class="face front"></div><div class="face back">${c.emoji}</div></div>`;
+    if(c.state==='hidden') div.addEventListener('click',()=>flip(i));
+    grid.appendChild(div);
+  });
+}
+
+function getCurrentCols(){const s=document.getElementById('size').value;return s==='4'?4:6;}
+
+function flip(i) {
+  if(lock||cards[i].state!=='hidden'||flipped.length===2) return;
+  cards[i].state='flipped'; flipped.push(i);
+  render(getCurrentCols());
+  if(flipped.length===2) {
+    moves++; document.getElementById('moves').textContent=moves;
+    lock=true;
+    const [a,b]=flipped;
+    if(cards[a].emoji===cards[b].emoji) {
+      setTimeout(()=>{ cards[a].state='matched'; cards[b].state='matched'; matched++; document.getElementById('pairs').textContent=matched; flipped=[]; lock=false; render(getCurrentCols()); if(matched===pairCount){clearInterval(timerInt);document.getElementById('msg').textContent=`🎉 Done in ${moves} moves & ${elapsed}s!`;} },400);
+    } else {
+      setTimeout(()=>{ cards[a].state='hidden'; cards[b].state='hidden'; flipped=[]; lock=false; render(getCurrentCols()); },900);
+    }
+  }
+}
+
+init();
+</script>
+</body>
+</html>

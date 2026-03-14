@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚀 Asteroids</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f0f13; color: #e8e8f0; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 0.5rem; }
+  canvas { border: 2px solid #2a2a3a; border-radius: 4px; }
+  #hud { display: flex; gap: 2rem; font-size: 0.9rem; color: #8888aa; }
+  #hud span { color: #6c63ff; font-weight: 700; }
+  #msg { font-size: 0.9rem; color: #8888aa; text-align: center; min-height: 1.4rem; }
+</style>
+</head>
+<body>
+<div id="hud">Score: <span id="score">0</span> &nbsp; Lives: <span id="lives">3</span></div>
+<canvas id="c" width="600" height="500"></canvas>
+<div id="msg">Press ← → to rotate, ↑ to thrust, Space to shoot</div>
+<script>
+const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+const W=600,H=500;
+let ship,bullets,asteroids,particles,score,lives,keys,state,frameId;
+
+function init() {
+  ship={x:W/2,y:H/2,angle:0,vx:0,vy:0,inv:180};
+  bullets=[]; asteroids=[]; particles=[];
+  score=0; lives=3; state='playing';
+  keys={}; 
+  document.getElementById('score').textContent=0;
+  document.getElementById('lives').textContent=3;
+  document.getElementById('msg').textContent='← → rotate · ↑ thrust · Space shoot';
+  spawnAsteroids(5);
+  cancelAnimationFrame(frameId); loop();
+}
+
+function spawnAsteroids(n) {
+  for(let i=0;i<n;i++) {
+    let x,y;
+    do { x=Math.random()*W; y=Math.random()*H; } while(dist(x,y,ship.x,ship.y)<120);
+    const ang=Math.random()*Math.PI*2, spd=0.8+Math.random()*1.2;
+    asteroids.push({x,y,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,r:40,pts:makeAsteroid(40)});
+  }
+}
+
+function makeAsteroid(r) {
+  return Array.from({length:10},(_,i)=>{
+    const a=(i/10)*Math.PI*2, jr=r*(0.7+Math.random()*0.6);
+    return [Math.cos(a)*jr,Math.sin(a)*jr];
+  });
+}
+
+function dist(x1,y1,x2,y2){return Math.hypot(x2-x1,y2-y1);}
+function wrap(v,max){return((v%max)+max)%max;}
+
+let lastShot=0;
+function loop() {
+  // Input
+  if(state==='playing') {
+    if(keys['ArrowLeft']) ship.angle-=0.06;
+    if(keys['ArrowRight']) ship.angle+=0.06;
+    if(keys['ArrowUp']) { ship.vx+=Math.sin(ship.angle)*0.15; ship.vy-=Math.cos(ship.angle)*0.15; }
+    const spd=Math.hypot(ship.vx,ship.vy);
+    if(spd>6){ship.vx*=6/spd;ship.vy*=6/spd;}
+    ship.vx*=0.99; ship.vy*=0.99;
+    ship.x=wrap(ship.x+ship.vx,W); ship.y=wrap(ship.y+ship.vy,H);
+    if(ship.inv>0) ship.inv--;
+    // Shoot
+    const now=Date.now();
+    if(keys[' ']&&now-lastShot>200) {
+      lastShot=now;
+      bullets.push({x:ship.x+Math.sin(ship.angle)*18,y:ship.y-Math.cos(ship.angle)*18,vx:Math.sin(ship.angle)*10,vy:-Math.cos(ship.angle)*10,life:60});
+    }
+    // Update bullets
+    bullets=bullets.filter(b=>b.life-->0);
+    bullets.forEach(b=>{b.x=wrap(b.x+b.vx,W);b.y=wrap(b.y+b.vy,H);});
+    // Update asteroids
+    asteroids.forEach(a=>{a.x=wrap(a.x+a.vx,W);a.y=wrap(a.y+a.vy,H);});
+    // Bullet-asteroid collision
+    const newAsts=[];
+    bullets.forEach(b=>{
+      asteroids.forEach(a=>{
+        if(a.dead) return;
+        if(dist(b.x,b.y,a.x,a.y)<a.r){a.dead=true;b.life=0;score+=a.r>20?20:50;document.getElementById('score').textContent=score;explode(a.x,a.y);
+          if(a.r>20){const nr=a.r*0.55;for(let i=0;i<2;i++){const ang=Math.random()*Math.PI*2,spd=1.5+Math.random();newAsts.push({x:a.x,y:a.y,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,r:nr,pts:makeAsteroid(nr)});}}
+        }
+      });
+    });
+    asteroids=asteroids.filter(a=>!a.dead).concat(newAsts);
+    // Ship-asteroid collision
+    if(ship.inv<=0) {
+      const hit=asteroids.some(a=>dist(ship.x,ship.y,a.x,a.y)<a.r-8);
+      if(hit){ lives--; document.getElementById('lives').textContent=lives; explode(ship.x,ship.y); ship.x=W/2;ship.y=H/2;ship.vx=0;ship.vy=0;ship.inv=180; if(lives<=0){state='dead';document.getElementById('msg').textContent='💀 Game Over — Press Enter to restart';} }
+    }
+    if(asteroids.length===0) spawnAsteroids(5+Math.floor(score/200));
+  }
+  // Particles
+  particles=particles.filter(p=>p.life-->0);
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vx*=0.97;p.vy*=0.97;});
+  draw();
+  frameId=requestAnimationFrame(loop);
+}
+
+function explode(x,y) {
+  for(let i=0;i<12;i++){const a=Math.random()*Math.PI*2,spd=1+Math.random()*3;particles.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,life:40+Math.random()*20});}
+}
+
+function draw() {
+  ctx.fillStyle='#0f0f13'; ctx.fillRect(0,0,W,H);
+  // Stars (static)
+  ctx.fillStyle='rgba(255,255,255,0.4)';
+  [[50,80],[150,40],[250,120],[380,60],[480,200],[120,350],[320,280],[540,130],[80,420],[440,380]].forEach(([x,y])=>{ctx.beginPath();ctx.arc(x,y,1,0,Math.PI*2);ctx.fill();});
+  // Asteroids
+  ctx.strokeStyle='#8888aa'; ctx.lineWidth=2;
+  asteroids.forEach(a=>{
+    ctx.save(); ctx.translate(a.x,a.y);
+    ctx.beginPath(); a.pts.forEach(([px,py],i)=>i?ctx.lineTo(px,py):ctx.moveTo(px,py)); ctx.closePath(); ctx.stroke();
+    ctx.restore();
+  });
+  // Bullets
+  ctx.fillStyle='#ffd32a';
+  bullets.forEach(b=>{ctx.beginPath();ctx.arc(b.x,b.y,2.5,0,Math.PI*2);ctx.fill();});
+  // Particles
+  particles.forEach(p=>{ctx.fillStyle=`rgba(255,150,50,${p.life/60})`;ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);ctx.fill();});
+  // Ship
+  if(state!=='dead'&&(ship.inv<=0||Math.floor(ship.inv/6)%2===0)) {
+    ctx.save(); ctx.translate(ship.x,ship.y); ctx.rotate(ship.angle);
+    ctx.strokeStyle='#6c63ff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(12,14); ctx.lineTo(-12,14); ctx.closePath(); ctx.stroke();
+    if(keys['ArrowUp']) { ctx.strokeStyle='#ff6584'; ctx.beginPath(); ctx.moveTo(-6,14); ctx.lineTo(0,26); ctx.lineTo(6,14); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+
+document.addEventListener('keydown', e=>{keys[e.key]=true; if([' ','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault(); if(e.key==='Enter'&&state==='dead')init();});
+document.addEventListener('keyup', e=>{keys[e.key]=false;});
+
+init();
+</script>
+</body>
+</html>

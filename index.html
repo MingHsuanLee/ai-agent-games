@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎮 AI Agent Games</title>
+<style>
+  :root {
+    --bg: #0f0f13;
+    --card: #1a1a24;
+    --border: #2a2a3a;
+    --accent: #6c63ff;
+    --accent2: #ff6584;
+    --text: #e8e8f0;
+    --muted: #8888aa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+  header { padding: 3rem 1.5rem 2rem; text-align: center; }
+  header h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 800; letter-spacing: -0.5px; }
+  header h1 span { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  header p { margin-top: 0.75rem; color: var(--muted); font-size: 1rem; }
+  .stats { display: flex; justify-content: center; gap: 2rem; margin-top: 1.5rem; }
+  .stat { text-align: center; }
+  .stat-num { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.25rem; padding: 0 1.5rem 4rem; max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: transform 0.15s, box-shadow 0.15s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(108,99,255,0.2); border-color: var(--accent); }
+  .card-thumb { height: 140px; display: flex; align-items: center; justify-content: center; font-size: 4rem; background: linear-gradient(135deg, #1e1e2e, #2a2a3a); }
+  .card-body { padding: 1.25rem; flex: 1; display: flex; flex-direction: column; }
+  .card-title { font-size: 1.1rem; font-weight: 700; }
+  .card-desc { color: var(--muted); font-size: 0.875rem; margin-top: 0.4rem; line-height: 1.5; flex: 1; }
+  .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+  .badge { font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 99px; background: rgba(108,99,255,0.15); color: var(--accent); border: 1px solid rgba(108,99,255,0.3); }
+  .play-btn { font-size: 0.8rem; color: var(--accent); font-weight: 600; }
+  footer { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎮 <span>AI Agent Games</span></h1>
+  <p>HTML/JS games built entirely by AI agents — one prompt, one file</p>
+  <div class="stats">
+    <div class="stat"><div class="stat-num">8</div><div class="stat-label">Games</div></div>
+    <div class="stat"><div class="stat-num">1</div><div class="stat-label">Agent</div></div>
+    <div class="stat"><div class="stat-num">∞</div><div class="stat-label">Fun</div></div>
+  </div>
+</header>
+
+<div class="grid">
+  <a class="card" href="games/snake/index.html">
+    <div class="card-thumb">🐍</div>
+    <div class="card-body">
+      <div class="card-title">Snake</div>
+      <div class="card-desc">Eat dots, grow longer, don't hit the walls or yourself. Arrow keys or swipe to move.</div>
+      <div class="card-footer">
+        <span class="badge">Classic</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="games/tetris/index.html">
+    <div class="card-thumb">🟦</div>
+    <div class="card-body">
+      <div class="card-title">Tetris</div>
+      <div class="card-desc">Stack falling tetrominoes, clear lines, survive as long as you can. Arrow keys to control.</div>
+      <div class="card-footer">
+        <span class="badge">Puzzle</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="games/breakout/index.html">
+    <div class="card-thumb">🧱</div>
+    <div class="card-body">
+      <div class="card-title">Breakout</div>
+      <div class="card-desc">Bounce a ball to smash bricks. Don't let the ball fall past your paddle.</div>
+      <div class="card-footer">
+        <span class="badge">Arcade</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="games/flappy-bird/index.html">
+    <div class="card-thumb">🐦</div>
+    <div class="card-body">
+      <div class="card-title">Flappy Bird</div>
+      <div class="card-desc">Tap or press Space to flap. Navigate through pipes without crashing.</div>
+      <div class="card-footer">
+        <span class="badge">Endless</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="games/minesweeper/index.html">
+    <div class="card-thumb">💣</div>
+    <div class="card-body">
+      <div class="card-title">Minesweeper</div>
+      <div class="card-desc">Left-click to reveal, right-click to flag. Clear the board without hitting a mine.</div>
+      <div class="card-footer">
+        <span class="badge">Puzzle</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="games/2048/index.html">
+    <div class="card-thumb">🔢</div>
+    <div class="card-body">
+      <div class="card-title">2048</div>
+      <div class="card-desc">Slide tiles to combine matching numbers. Reach the 2048 tile to win.</div>
+      <div class="card-footer">
+        <span class="badge">Strategy</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="games/asteroids/index.html">
+    <div class="card-thumb">🚀</div>
+    <div class="card-body">
+      <div class="card-title">Asteroids</div>
+      <div class="card-desc">Pilot a ship through an asteroid field. Shoot rocks before they hit you.</div>
+      <div class="card-footer">
+        <span class="badge">Arcade</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+
+  <a class="card" href="games/memory-match/index.html">
+    <div class="card-thumb">🃏</div>
+    <div class="card-body">
+      <div class="card-title">Memory Match</div>
+      <div class="card-desc">Flip cards to find matching pairs. Clear the board in as few moves as possible.</div>
+      <div class="card-footer">
+        <span class="badge">Memory</span>
+        <span class="play-btn">▶ Play</span>
+      </div>
+    </div>
+  </a>
+</div>
+
+<footer>
+  <p>Built by AI agents · <a href="https://github.com/MingHsuanLee/ai-agent-games">GitHub</a> · <a href="CONTRIBUTING.md">Contribute a game</a> · MIT License</p>
+</footer>
+</body>
+</html>

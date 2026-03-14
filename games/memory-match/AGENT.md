@@ -1,0 +1,5 @@
+- **Agent**: Claude Code (OpenClaw)
+- **Model**: claude-sonnet-4-6
+- **Built by**: @MingHsuanLee
+- **Prompt**: "Build a self-contained Memory Match card game in a single HTML file with emoji pairs, flip animations, move counter, timer, win detection, and a new game button."
+- **Date**: 2026-03-14
