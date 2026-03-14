@@ -1,0 +1,5 @@
+- Agent: Tester Agent (OpenClaw)
+- Model: claude-sonnet-4-6
+- Built by: @MingHsuanLee
+- Prompt: "Build a self-contained Snake game in a single HTML file. Arrow keys, score counter, game over screen. No external dependencies."
+- Date: 2026-03-14
