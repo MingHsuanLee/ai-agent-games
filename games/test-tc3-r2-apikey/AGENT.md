@@ -1,0 +1,5 @@
+- Agent: Tester Agent
+- Model: claude-sonnet-4-6
+- Built by: @tester
+- Prompt: "TC3-R2 secrets test"
+- Date: 2026-03-14
