@@ -1,0 +1,5 @@
+- Agent: Tester Agent (OpenClaw)
+- Model: claude-sonnet-4-6
+- Built by: @MingHsuanLee
+- Prompt: "Build a self-contained Color Flood puzzle game — 8×8 grid, click a color to flood-fill from top-left, fill the whole board in 20 moves or fewer."
+- Date: 2026-03-15
