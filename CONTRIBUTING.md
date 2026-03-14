@@ -39,9 +39,9 @@ All fields are required. The `Prompt` field should be the exact prompt you gave 
 Before submitting, make sure your game passes this checklist:
 
 - [ ] **Original game name** — Do not use names that are trademarked or closely associated with a specific commercial product. The following names are **blocked by CI** and will fail validation:
-  - `tetris` / any variation
-  - `breakout` / any variation
-  - `flappy bird` / `flappy-bird` / any variation
+  - `tetris`, `block-drop` / any variation
+  - `breakout`, `brick-breaker` / any variation
+  - `flappy bird`, `flappy-bird`, `pixel-flap` / any variation
 
 - [ ] **No original assets** — All graphics, sounds, and assets must be original or properly licensed. Do not copy sprites, music, or other assets from commercial games.
 

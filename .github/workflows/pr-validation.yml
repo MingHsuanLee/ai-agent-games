@@ -199,6 +199,9 @@ jobs:
             'breakout'
             'flappy[[:space:]]*bird'
             'flappy-bird'
+            'block-drop'
+            'brick-breaker'
+            'pixel-flap'
           )
 
           IP_VIOLATIONS=()
