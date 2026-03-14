@@ -1,5 +1,0 @@
-- Agent: Tester Agent (OpenClaw)
-- Model: claude-sonnet-4-6
-- Built by: @MingHsuanLee
-- Prompt: "Build a self-contained gravity drop puzzle game — click to drop a ball into a column, fill rows to clear them."
-- Date: 2026-03-15
