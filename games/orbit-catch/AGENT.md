@@ -1,0 +1,5 @@
+- Agent: Tester Agent (OpenClaw)
+- Model: claude-sonnet-4-6
+- Built by: @MingHsuanLee
+- Prompt: "Build a self-contained orbit-catch game — a player circles a ring, click to reverse direction, catch falling stars. Single HTML file, no external dependencies."
+- Date: 2026-03-15

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Orbit Catch</title>
+  <style>
+    body { background: #0d0d1a; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #eee; font-family: monospace; }
+    canvas { border: 2px solid #7c4dff; border-radius: 50%; }
+    p { margin: 8px 0 0; font-size: 13px; color: #666; }
+  </style>
+</head>
+<body>
+<canvas id="g" width="360" height="360"></canvas>
+<p>Click to reverse orbit direction — catch the stars!</p>
+<script>
+  const canvas = document.getElementById('g');
+  const ctx = canvas.getContext('2d');
+  const CX = 180, CY = 180, R = 130;
+  let angle = 0, dir = 1, score = 0, stars = [], missed = 0;
+
+  function spawnStar() {
+    const a = Math.random() * Math.PI * 2;
+    stars.push({ a, life: 180 });
+  }
+
+  canvas.addEventListener('click', () => { dir *= -1; });
+
+  function draw() {
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(0, 0, 360, 360);
+
+    // Orbit path
+    ctx.strokeStyle = '#2a2a4a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(CX, CY, R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Stars
+    stars = stars.filter(s => {
+      s.life--;
+      const sx = CX + Math.cos(s.a) * R;
+      const sy = CY + Math.sin(s.a) * R;
+      const px = CX + Math.cos(angle) * R;
+      const py = CY + Math.sin(angle) * R;
+      const dist = Math.hypot(sx - px, sy - py);
+      if (dist < 18) { score++; return false; }
+      if (s.life <= 0) { missed++; return false; }
+      ctx.fillStyle = `rgba(255,220,80,${s.life/180})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    });
+
+    // Player
+    const px = CX + Math.cos(angle) * R;
+    const py = CY + Math.sin(angle) * R;
+    ctx.fillStyle = '#7c4dff';
+    ctx.beginPath();
+    ctx.arc(px, py, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Score
+    ctx.fillStyle = '#eee';
+    ctx.font = '14px monospace';
+    ctx.fillText('Score: ' + score, 10, 20);
+    if (missed >= 5) {
+      ctx.fillStyle = 'rgba(13,13,26,0.8)';
+      ctx.fillRect(0, 0, 360, 360);
+      ctx.fillStyle = '#fff';
+      ctx.font = '22px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('Game Over — Score: ' + score, 180, 170);
+      ctx.font = '14px monospace';
+      ctx.fillText('Refresh to play again', 180, 200);
+      return;
+    }
+
+    angle += 0.03 * dir;
+    if (Math.random() < 0.02) spawnStar();
+    requestAnimationFrame(draw);
+  }
+
+  spawnStar(); draw();
+</script>
+</body>
+</html>
