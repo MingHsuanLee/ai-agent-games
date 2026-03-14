@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Color Flood</title>
+  <style>
+    body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; color: #eee; font-family: monospace; }
+    #board { display: grid; grid-template-columns: repeat(8, 40px); gap: 2px; margin: 12px 0; }
+    .cell { width: 40px; height: 40px; border-radius: 4px; cursor: pointer; transition: opacity 0.1s; }
+    .cell:hover { opacity: 0.8; }
+    #info { font-size: 14px; margin-bottom: 6px; }
+    #msg { font-size: 15px; height: 20px; color: #7c4dff; }
+  </style>
+</head>
+<body>
+<div id="info">Moves: <span id="moves">0</span> / 20</div>
+<div id="board"></div>
+<div id="msg"></div>
+<script>
+  const COLS = ['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c'];
+  const SIZE = 8, MAX = 20;
+  let grid = [], flooded = new Set(), moves = 0, done = false;
+
+  function rand() { return Math.floor(Math.random() * COLS.length); }
+
+  function init() {
+    grid = Array.from({length: SIZE}, () => Array.from({length: SIZE}, rand));
+    flooded = new Set(['0,0']);
+    flood(grid[0][0]);
+    moves = 0; done = false;
+    document.getElementById('moves').textContent = moves;
+    document.getElementById('msg').textContent = '';
+    render();
+  }
+
+  function flood(newColor) {
+    const oldColor = grid[0][0];
+    if (oldColor === newColor) return;
+    const queue = [...flooded].map(k => k.split(',').map(Number));
+    const toFill = [];
+    const visited = new Set(flooded);
+    while (queue.length) {
+      const [r,c] = queue.shift();
+      if (grid[r][c] === oldColor || flooded.has(r+','+c)) {
+        grid[r][c] = newColor;
+        toFill.push([r,c]);
+        for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          const nr=r+dr, nc=c+dc;
+          if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE&&!visited.has(nr+','+nc)) {
+            visited.add(nr+','+nc);
+            if (grid[nr][nc]===oldColor||flooded.has(nr+','+nc)) queue.push([nr,nc]);
+          }
+        }
+      }
+    }
+    // Expand flood region
+    flooded = new Set();
+    const bfs = [[0,0]]; const seen = new Set(['0,0']);
+    while (bfs.length) {
+      const [r,c] = bfs.shift();
+      flooded.add(r+','+c);
+      for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nr=r+dr, nc=c+dc;
+        if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE&&!seen.has(nr+','+nc)&&grid[nr][nc]===newColor) {
+          seen.add(nr+','+nc); bfs.push([nr,nc]);
+        }
+      }
+    }
+  }
+
+  function render() {
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    for (let r=0; r<SIZE; r++) for (let c=0; c<SIZE; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.background = COLS[grid[r][c]];
+      if (flooded.has(r+','+c)) cell.style.outline = '2px solid rgba(255,255,255,0.5)';
+      if (!done) cell.addEventListener('click', () => pick(grid[r][c]));
+      board.appendChild(cell);
+    }
+  }
+
+  function pick(color) {
+    if (done || grid[0][0] === color) return;
+    flood(color); moves++;
+    document.getElementById('moves').textContent = moves;
+    if (flooded.size === SIZE*SIZE) {
+      done = true;
+      document.getElementById('msg').textContent = `You win in ${moves} moves! 🎉`;
+    } else if (moves >= MAX) {
+      done = true;
+      document.getElementById('msg').textContent = 'Out of moves! Refresh to retry.';
+    }
+    render();
+  }
+
+  init();
+</script>
+</body>
+</html>
