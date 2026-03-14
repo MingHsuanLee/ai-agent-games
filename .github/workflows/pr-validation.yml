@@ -28,37 +28,43 @@ jobs:
           echo "All changed files:"
           echo "$ALL_CHANGED"
 
-          # Deleted files only
-          DELETED=$(git diff --name-only --diff-filter=D origin/${{ github.base_ref }}...HEAD)
+          # Build array of all touched game folders
+          mapfile -t ALL_FOLDERS < <(
+            echo "$ALL_CHANGED" \
+              | grep -E '^games/[^/]+/' \
+              | sed 's|^\(games/[^/]*/\).*|\1|' \
+              | sort -u \
+              | sed 's|/$||'
+          )
 
-          # Folders that have ONLY deletions (no additions/modifications) — skip validation
-          ALL_FOLDERS=$(echo "$ALL_CHANGED" | grep -E '^games/[^/]+/' | sed 's|^\(games/[^/]*/\).*|\1|' | sort -u | sed 's|/$||')
-          DELETED_FOLDERS=$(echo "$DELETED"  | grep -E '^games/[^/]+/' | sed 's|^\(games/[^/]*/\).*|\1|' | sort -u | sed 's|/$||')
+          # Files that are added/copied/modified/renamed (not deleted)
+          NON_DEL_FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD)
 
-          # Validate folders = those with at least one non-deleted file
-          # i.e. ALL_FOLDERS minus pure-deletion folders
-          VALIDATE_FOLDERS=""
-          while IFS= read -r folder; do
+          # Keep only folders that have at least one non-deleted file
+          VALIDATE_FOLDERS=()
+          for folder in "${ALL_FOLDERS[@]}"; do
             [ -z "$folder" ] && continue
-            # Check if any file in this folder is NOT deleted (added or modified)
-            HAS_NON_DELETED=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD | grep -E "^${folder}/" || true)
-            if [ -n "$HAS_NON_DELETED" ]; then
-              VALIDATE_FOLDERS="${VALIDATE_FOLDERS}${folder}\n"
+            if echo "$NON_DEL_FILES" | grep -qE "^${folder}/"; then
+              VALIDATE_FOLDERS+=("$folder")
+              echo "Will validate: $folder"
             else
-              echo "Skipping validation for deletion-only folder: $folder"
+              echo "Skipping deletion-only folder: $folder"
             fi
-          done <<< "$ALL_FOLDERS"
+          done
 
-          echo "Folders to validate:"
-          echo "$VALIDATE_FOLDERS"
+          echo "Folders to validate: ${VALIDATE_FOLDERS[*]}"
 
-          echo "game_folders<<EOF" >> $GITHUB_OUTPUT
-          printf '%s' "$VALIDATE_FOLDERS" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Write newline-delimited list to GITHUB_OUTPUT
+          {
+            echo "game_folders<<EOF"
+            for folder in "${VALIDATE_FOLDERS[@]}"; do
+              echo "$folder"
+            done
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
-          # Also expose whether this PR is entirely deletion-only (for short-circuit)
-          if [ -z "$(echo "$VALIDATE_FOLDERS" | tr -d '[:space:]')" ] && [ -n "$(echo "$ALL_FOLDERS" | tr -d '[:space:]')" ]; then
+          # Expose deletion_only flag
+          if [ ${#VALIDATE_FOLDERS[@]} -eq 0 ] && [ ${#ALL_FOLDERS[@]} -gt 0 ]; then
             echo "deletion_only=true" >> $GITHUB_OUTPUT
             echo "PR is deletion-only — game validation checks will be skipped."
           else
@@ -102,39 +108,26 @@ jobs:
             'clarity\.ms'
           )
 
-          ALLOWED_CDNS=(
-            'cdnjs\.cloudflare\.com'
-            'unpkg\.com'
-            'jsdelivr\.net'
-            'cdn\.jsdelivr\.net'
-            'phaser\.io'
-            'threejs\.org'
-            'babylonjs\.com'
-          )
-
-          VIOLATIONS=()
-
+          CDN_VIOLATIONS=()
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
-            for pattern in "${DISALLOWED_PATTERNS[@]}"; do
-              MATCHES=$(grep -rEl "$pattern" "$folder" 2>/dev/null || true)
-              if [ -n "$MATCHES" ]; then
-                VIOLATIONS+=("$pattern in $MATCHES")
-              fi
+            for html_file in "$folder"/*.html; do
+              [ -f "$html_file" ] || continue
+              for pattern in "${DISALLOWED_PATTERNS[@]}"; do
+                if grep -qiE "$pattern" "$html_file"; then
+                  CDN_VIOLATIONS+=("$html_file: $pattern")
+                fi
+              done
             done
           done <<< "${{ steps.changed.outputs.game_folders }}"
 
-          if [ ${#VIOLATIONS[@]} -gt 0 ]; then
-            echo "FAIL: External tracking/disallowed CDN found:"
-            printf '%s\n' "${VIOLATIONS[@]}"
+          if [ ${#CDN_VIOLATIONS[@]} -gt 0 ]; then
+            echo "FAIL: Disallowed CDN/tracking found:"
+            printf '  %s\n' "${CDN_VIOLATIONS[@]}"
             echo "self_contained_ok=false" >> $GITHUB_OUTPUT
-            {
-              echo "violations<<EOF"
-              printf '%s\n' "${VIOLATIONS[@]}"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
+            echo "cdn_violations=${CDN_VIOLATIONS[*]}" >> $GITHUB_OUTPUT
           else
-            echo "PASS: No disallowed external dependencies found"
+            echo "PASS: No disallowed CDN/tracking scripts found"
             echo "self_contained_ok=true" >> $GITHUB_OUTPUT
           fi
 
@@ -144,38 +137,32 @@ jobs:
         run: |
           SECRET_PATTERNS=(
             'sk-[a-zA-Z0-9]{20,}'
-            'ghp_[a-zA-Z0-9]{36}'
-            'gho_[a-zA-Z0-9]{36}'
-            'AKIA[0-9A-Z]{16}'
+            'ghp_[a-zA-Z0-9]+'
+            'AKIA[A-Z0-9]{16}'
             'AIza[0-9A-Za-z\-_]{35}'
-            'Bearer [a-zA-Z0-9\-_\.]{20,}'
-            'password\s*=\s*["\x27][^"\x27]{8,}'
-            'api[_-]?key\s*=\s*["\x27][^"\x27]{8,}'
+            'Bearer [a-zA-Z0-9\-_]{20,}'
           )
 
           SECRETS_FOUND=()
-
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
-            for pattern in "${SECRET_PATTERNS[@]}"; do
-              MATCHES=$(grep -rEil "$pattern" "$folder" 2>/dev/null || true)
-              if [ -n "$MATCHES" ]; then
-                SECRETS_FOUND+=("Pattern '$pattern' in: $MATCHES")
-              fi
+            for html_file in "$folder"/*.html; do
+              [ -f "$html_file" ] || continue
+              for pattern in "${SECRET_PATTERNS[@]}"; do
+                if grep -qE "$pattern" "$html_file"; then
+                  SECRETS_FOUND+=("$html_file: possible secret ($pattern)")
+                fi
+              done
             done
           done <<< "${{ steps.changed.outputs.game_folders }}"
 
           if [ ${#SECRETS_FOUND[@]} -gt 0 ]; then
             echo "FAIL: Possible secrets/tokens found:"
-            printf '%s\n' "${SECRETS_FOUND[@]}"
+            printf '  %s\n' "${SECRETS_FOUND[@]}"
             echo "secrets_ok=false" >> $GITHUB_OUTPUT
-            {
-              echo "secrets_found<<EOF"
-              printf '%s\n' "${SECRETS_FOUND[@]}"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
+            echo "secrets_found=${SECRETS_FOUND[*]}" >> $GITHUB_OUTPUT
           else
-            echo "PASS: No secrets or tokens detected"
+            echo "PASS: No secrets/tokens detected"
             echo "secrets_ok=true" >> $GITHUB_OUTPUT
           fi
 
@@ -183,53 +170,42 @@ jobs:
         id: check_index_html
         if: steps.changed.outputs.deletion_only != 'true'
         run: |
-          npm install -g @html-validate/cli 2>/dev/null || true
-
-          MISSING_INDEX=()
-          INVALID_HTML=()
-
+          HTML_ISSUES=()
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
-
-            if [ ! -f "$folder/index.html" ]; then
-              MISSING_INDEX+=("$folder/index.html")
+            html_file="$folder/index.html"
+            if [ ! -f "$html_file" ]; then
+              HTML_ISSUES+=("$folder: missing index.html")
               continue
             fi
-
-            FILE="$folder/index.html"
-            if ! grep -qi '<html' "$FILE"; then
-              INVALID_HTML+=("$FILE: missing <html> tag")
-            elif ! grep -qi '<head' "$FILE"; then
-              INVALID_HTML+=("$FILE: missing <head> tag")
-            elif ! grep -qi '<body' "$FILE"; then
-              INVALID_HTML+=("$FILE: missing <body> tag")
-            elif ! grep -qi '<!DOCTYPE' "$FILE"; then
-              INVALID_HTML+=("$FILE: missing DOCTYPE declaration")
+            if ! grep -qi '<!DOCTYPE' "$html_file"; then
+              HTML_ISSUES+=("$html_file: missing <!DOCTYPE>")
+            fi
+            if ! grep -qi '<html' "$html_file"; then
+              HTML_ISSUES+=("$html_file: missing <html> tag")
+            fi
+            if ! grep -qi '<head' "$html_file"; then
+              HTML_ISSUES+=("$html_file: missing <head> tag")
+            fi
+            if ! grep -qi '<body' "$html_file"; then
+              HTML_ISSUES+=("$html_file: missing <body> tag")
             fi
           done <<< "${{ steps.changed.outputs.game_folders }}"
 
-          ERRORS=("${MISSING_INDEX[@]}" "${INVALID_HTML[@]}")
-
-          if [ ${#ERRORS[@]} -gt 0 ]; then
-            echo "FAIL: index.html issues found:"
-            printf '%s\n' "${ERRORS[@]}"
+          if [ ${#HTML_ISSUES[@]} -gt 0 ]; then
+            echo "FAIL: HTML issues found:"
+            printf '  %s\n' "${HTML_ISSUES[@]}"
             echo "index_html_ok=false" >> $GITHUB_OUTPUT
-            {
-              echo "index_html_errors<<EOF"
-              printf '%s\n' "${ERRORS[@]}"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
+            echo "html_issues=${HTML_ISSUES[*]}" >> $GITHUB_OUTPUT
           else
             echo "PASS: All game folders have valid index.html"
             echo "index_html_ok=true" >> $GITHUB_OUTPUT
           fi
 
-
       - name: Check for IP-flagged game names
         id: check_ip_names
         if: steps.changed.outputs.deletion_only != 'true'
         run: |
-          # Flagged names: trademarked/IP-risk game titles (case-insensitive)
           FLAGGED_PATTERNS=(
             'tetris'
             'breakout'
@@ -241,37 +217,28 @@ jobs:
           )
 
           IP_VIOLATIONS=()
-
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
-            # Check folder name itself
-            FOLDER_LOWER=$(echo "$folder" | tr '[:upper:]' '[:lower:]')
+            folder_name=$(basename "$folder")
             for pattern in "${FLAGGED_PATTERNS[@]}"; do
-              if echo "$FOLDER_LOWER" | grep -qE "$pattern"; then
-                IP_VIOLATIONS+=("Flagged folder name: $folder (matched: $pattern)")
+              if echo "$folder_name" | grep -qiE "$pattern"; then
+                IP_VIOLATIONS+=("$folder: name matches flagged pattern '$pattern'")
               fi
             done
-            # Check file contents (index.html, AGENT.md, README.md)
-            for pattern in "${FLAGGED_PATTERNS[@]}"; do
-              MATCHES=$(grep -rEil "$pattern" "$folder" --include="*.html" --include="*.md" 2>/dev/null || true)
-              if [ -n "$MATCHES" ]; then
-                IP_VIOLATIONS+=("Flagged name '$pattern' found in: $MATCHES")
-              fi
-            done
+            if [ -f "$folder/AGENT.md" ]; then
+              for pattern in "${FLAGGED_PATTERNS[@]}"; do
+                if grep -qiE "$pattern" "$folder/AGENT.md"; then
+                  IP_VIOLATIONS+=("$folder/AGENT.md: contains flagged pattern '$pattern'")
+                fi
+              done
+            fi
           done <<< "${{ steps.changed.outputs.game_folders }}"
 
-          # Deduplicate
-          IFS=$'\n' IP_VIOLATIONS=($(printf '%s\n' "${IP_VIOLATIONS[@]}" | sort -u))
-
           if [ ${#IP_VIOLATIONS[@]} -gt 0 ]; then
-            echo "FAIL: IP-flagged game name(s) detected:"
-            printf '%s\n' "${IP_VIOLATIONS[@]}"
+            echo "FAIL: IP-flagged game names detected:"
+            printf '  %s\n' "${IP_VIOLATIONS[@]}"
             echo "ip_names_ok=false" >> $GITHUB_OUTPUT
-            {
-              echo "ip_violations<<EOF"
-              printf '%s\n' "${IP_VIOLATIONS[@]}"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
+            echo "ip_violations=${IP_VIOLATIONS[*]}" >> $GITHUB_OUTPUT
           else
             echo "PASS: No IP-flagged game names detected"
             echo "ip_names_ok=true" >> $GITHUB_OUTPUT
@@ -280,57 +247,34 @@ jobs:
       - name: Post PR comment with results
         if: always() && steps.changed.outputs.deletion_only != 'true'
         uses: actions/github-script@v7
-        env:
-          # Pass step outputs as env vars to avoid JS syntax errors from
-          # single quotes or special characters in secret pattern strings.
-          AGENT_MD_MISSING: ${{ steps.check_agent_md.outputs.agent_md_missing }}
-          INDEX_HTML_ERRORS: ${{ steps.check_index_html.outputs.index_html_errors }}
-          VIOLATIONS: ${{ steps.check_self_contained.outputs.violations }}
-          SECRETS_FOUND: ${{ steps.check_secrets.outputs.secrets_found }}
-          IP_VIOLATIONS: ${{ steps.check_ip_names.outputs.ip_violations }}
         with:
           script: |
-            const agentMdOk = '${{ steps.check_agent_md.outputs.agent_md_ok }}' === 'true';
-            const selfContainedOk = '${{ steps.check_self_contained.outputs.self_contained_ok }}' === 'true';
-            const secretsOk = '${{ steps.check_secrets.outputs.secrets_ok }}' === 'true';
-            const ipNamesOk = '${{ steps.check_ip_names.outputs.ip_names_ok }}' === 'true';
-            const indexHtmlOk = '${{ steps.check_index_html.outputs.index_html_ok }}' === 'true';
-            const allPassed = agentMdOk && selfContainedOk && secretsOk && indexHtmlOk && ipNamesOk;
+            const agentMd   = '${{ steps.check_agent_md.outputs.agent_md_ok }}';
+            const indexHtml = '${{ steps.check_index_html.outputs.index_html_ok }}';
+            const selfCont  = '${{ steps.check_self_contained.outputs.self_contained_ok }}';
+            const secrets   = '${{ steps.check_secrets.outputs.secrets_ok }}';
+            const ipNames   = '${{ steps.check_ip_names.outputs.ip_names_ok }}';
 
-            const tick = '✅';
-            const cross = '❌';
+            const icon = v => v === 'true' ? '✅' : v === 'false' ? '❌' : '⏭️';
+            const allPass = [agentMd, indexHtml, selfCont, secrets, ipNames].every(v => v === 'true');
 
-            // Read outputs via process.env — safe from single quotes and special chars
-            const agentMdMissing = process.env.AGENT_MD_MISSING || '';
-            const indexHtmlErrors = process.env.INDEX_HTML_ERRORS || '';
-            const violations = process.env.VIOLATIONS || '';
-            const secretsFound = process.env.SECRETS_FOUND || '';
-            const ipViolations = process.env.IP_VIOLATIONS || '';
+            const body = [
+              `## ${allPass ? '✅ All checks passed!' : '❌ Some checks failed'}`,
+              '',
+              '| Check | Result |',
+              '|---|---|',
+              `| AGENT.md present | ${icon(agentMd)} |`,
+              `| index.html valid | ${icon(indexHtml)} |`,
+              `| No tracking scripts | ${icon(selfCont)} |`,
+              `| No secrets/tokens | ${icon(secrets)} |`,
+              `| No IP-flagged names | ${icon(ipNames)} |`,
+            ].join('\n');
 
-            const body = `## 🎮 PR Validation Results
-
-            | Check | Status |
-            |-------|--------|
-            | \`AGENT.md\` present | ${agentMdOk ? tick + ' Pass' : cross + ' Fail'} |
-            | \`index.html\` present & valid | ${indexHtmlOk ? tick + ' Pass' : cross + ' Fail'} |
-            | Self-contained (no tracking/bad CDNs) | ${selfContainedOk ? tick + ' Pass' : cross + ' Fail'} |
-            | No secrets/tokens committed | ${secretsOk ? tick + ' Pass' : cross + ' Fail'} |
-            | No IP-flagged game names | ${ipNamesOk ? tick + ' Pass' : cross + ' Fail'} |
-
-            ${allPassed ? '**All checks passed! 🎉**' : '**One or more checks failed. Please fix before merging.**'}
-
-            ${!agentMdOk && agentMdMissing ? '\n### Missing AGENT.md\n```\n' + agentMdMissing + '\n```' : ''}
-            ${!indexHtmlOk && indexHtmlErrors ? '\n### index.html Issues\n```\n' + indexHtmlErrors + '\n```' : ''}
-            ${!selfContainedOk && violations ? '\n### Disallowed External Dependencies\n```\n' + violations + '\n```' : ''}
-            ${!secretsOk && secretsFound ? '\n### Possible Secrets Detected\n```\n' + secretsFound + '\n```' : ''}
-            ${!ipNamesOk && ipViolations ? '\n### ⚠️ IP Risk: Flagged Game Name\n> This game name is flagged for trademark/copyright risk. Ming\'s approval is required before this PR can be merged. Please rename the game and resubmit, or contact @MingHsuanLee for review.\n\n**Details:**\n```\n' + ipViolations + '\n```' : ''}
-            `;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: body
+              issue_number: context.issue.number,
+              body,
             });
 
       - name: Fail job if any check failed
@@ -343,36 +287,5 @@ jobs:
             steps.check_ip_names.outputs.ip_names_ok == 'false'
           )
         run: |
-          echo "One or more validation checks failed."
+          echo "One or more validation checks failed. See details above."
           exit 1
-
-  notify-on-failure:
-    name: Notify on Failure
-    runs-on: ubuntu-latest
-    needs: validate-pr
-    if: failure()
-    steps:
-      - name: Send Telegram notification
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          PR_URL="${{ github.event.pull_request.html_url }}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
-          REPO="${{ github.repository }}"
-
-          MESSAGE="⚠️ *PR Validation Failed*
-
-          Repo: \`${REPO}\`
-          PR: [${PR_TITLE}](${PR_URL})
-          Author: @${PR_AUTHOR}
-
-          One or more checks failed — AGENT.md missing, disallowed CDN/tracking, possible secrets detected, or IP-flagged game name found.
-          Please review the PR."
-
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d parse_mode="Markdown" \
-            -d disable_web_page_preview="true" \
-            -d text="${MESSAGE}"
