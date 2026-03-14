@@ -21,21 +21,53 @@ jobs:
       - name: Detect changed game folders
         id: changed
         run: |
-          # Get list of changed files vs base branch
           git fetch origin ${{ github.base_ref }}
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-          echo "Changed files:"
-          echo "$CHANGED"
 
-          # Extract unique top-level game folders (e.g. games/my-game/...)
-          GAME_FOLDERS=$(echo "$CHANGED" | grep -E '^games/[^/]+/' | sed 's|^\(games/[^/]*/\).*|\1|' | sort -u | sed 's|/$||')
-          echo "Game folders: $GAME_FOLDERS"
+          # All changed paths
+          ALL_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "All changed files:"
+          echo "$ALL_CHANGED"
+
+          # Deleted files only
+          DELETED=$(git diff --name-only --diff-filter=D origin/${{ github.base_ref }}...HEAD)
+
+          # Folders that have ONLY deletions (no additions/modifications) — skip validation
+          ALL_FOLDERS=$(echo "$ALL_CHANGED" | grep -E '^games/[^/]+/' | sed 's|^\(games/[^/]*/\).*|\1|' | sort -u | sed 's|/$||')
+          DELETED_FOLDERS=$(echo "$DELETED"  | grep -E '^games/[^/]+/' | sed 's|^\(games/[^/]*/\).*|\1|' | sort -u | sed 's|/$||')
+
+          # Validate folders = those with at least one non-deleted file
+          # i.e. ALL_FOLDERS minus pure-deletion folders
+          VALIDATE_FOLDERS=""
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            # Check if any file in this folder is NOT deleted (added or modified)
+            HAS_NON_DELETED=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD | grep -E "^${folder}/" || true)
+            if [ -n "$HAS_NON_DELETED" ]; then
+              VALIDATE_FOLDERS="${VALIDATE_FOLDERS}${folder}\n"
+            else
+              echo "Skipping validation for deletion-only folder: $folder"
+            fi
+          done <<< "$ALL_FOLDERS"
+
+          echo "Folders to validate:"
+          echo "$VALIDATE_FOLDERS"
+
           echo "game_folders<<EOF" >> $GITHUB_OUTPUT
-          echo "$GAME_FOLDERS" >> $GITHUB_OUTPUT
+          printf '%s' "$VALIDATE_FOLDERS" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+          # Also expose whether this PR is entirely deletion-only (for short-circuit)
+          if [ -z "$(echo "$VALIDATE_FOLDERS" | tr -d '[:space:]')" ] && [ -n "$(echo "$ALL_FOLDERS" | tr -d '[:space:]')" ]; then
+            echo "deletion_only=true" >> $GITHUB_OUTPUT
+            echo "PR is deletion-only — game validation checks will be skipped."
+          else
+            echo "deletion_only=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Check AGENT.md present
         id: check_agent_md
+        if: steps.changed.outputs.deletion_only != 'true'
         run: |
           MISSING=()
           while IFS= read -r folder; do
@@ -56,6 +88,7 @@ jobs:
 
       - name: Check self-contained (no disallowed CDN/tracking)
         id: check_self_contained
+        if: steps.changed.outputs.deletion_only != 'true'
         run: |
           DISALLOWED_PATTERNS=(
             'google-analytics\.com'
@@ -107,6 +140,7 @@ jobs:
 
       - name: Check for secrets/tokens
         id: check_secrets
+        if: steps.changed.outputs.deletion_only != 'true'
         run: |
           SECRET_PATTERNS=(
             'sk-[a-zA-Z0-9]{20,}'
@@ -147,6 +181,7 @@ jobs:
 
       - name: Check index.html present and valid HTML
         id: check_index_html
+        if: steps.changed.outputs.deletion_only != 'true'
         run: |
           npm install -g @html-validate/cli 2>/dev/null || true
 
@@ -192,6 +227,7 @@ jobs:
 
       - name: Check for IP-flagged game names
         id: check_ip_names
+        if: steps.changed.outputs.deletion_only != 'true'
         run: |
           # Flagged names: trademarked/IP-risk game titles (case-insensitive)
           FLAGGED_PATTERNS=(
@@ -242,7 +278,7 @@ jobs:
           fi
 
       - name: Post PR comment with results
-        if: always()
+        if: always() && steps.changed.outputs.deletion_only != 'true'
         uses: actions/github-script@v7
         env:
           # Pass step outputs as env vars to avoid JS syntax errors from
@@ -299,11 +335,13 @@ jobs:
 
       - name: Fail job if any check failed
         if: |
-          steps.check_agent_md.outputs.agent_md_ok != 'true' ||
-          steps.check_index_html.outputs.index_html_ok != 'true' ||
-          steps.check_self_contained.outputs.self_contained_ok != 'true' ||
-          steps.check_secrets.outputs.secrets_ok != 'true' ||
-          steps.check_ip_names.outputs.ip_names_ok != 'true'
+          steps.changed.outputs.deletion_only != 'true' && (
+            steps.check_agent_md.outputs.agent_md_ok == 'false' ||
+            steps.check_index_html.outputs.index_html_ok == 'false' ||
+            steps.check_self_contained.outputs.self_contained_ok == 'false' ||
+            steps.check_secrets.outputs.secrets_ok == 'false' ||
+            steps.check_ip_names.outputs.ip_names_ok == 'false'
+          )
         run: |
           echo "One or more validation checks failed."
           exit 1
