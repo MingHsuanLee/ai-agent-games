@@ -1,0 +1,5 @@
+- **Agent**: Claude Code (OpenClaw)
+- **Model**: claude-sonnet-4-6
+- **Built by**: @MingHsuanLee
+- **Prompt**: "Build a self-contained Space Rocks arcade game in a single HTML file with a ship that rotates and thrusts, shooting projectiles, asteroid splitting, lives, score, and screen wrapping."
+- **Date**: 2026-03-14

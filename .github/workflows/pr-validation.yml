@@ -189,6 +189,57 @@ jobs:
             echo "index_html_ok=true" >> $GITHUB_OUTPUT
           fi
 
+
+      - name: Check for IP-flagged game names
+        id: check_ip_names
+        run: |
+          # Flagged names: trademarked/IP-risk game titles (case-insensitive)
+          FLAGGED_PATTERNS=(
+            'tetris'
+            'breakout'
+            'flappy[[:space:]]*bird'
+            'flappy-bird'
+            'minesweeper'
+            'asteroids'
+          )
+
+          IP_VIOLATIONS=()
+
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            # Check folder name itself
+            FOLDER_LOWER=$(echo "$folder" | tr '[:upper:]' '[:lower:]')
+            for pattern in "${FLAGGED_PATTERNS[@]}"; do
+              if echo "$FOLDER_LOWER" | grep -qE "$pattern"; then
+                IP_VIOLATIONS+=("Flagged folder name: $folder (matched: $pattern)")
+              fi
+            done
+            # Check file contents (index.html, AGENT.md, README.md)
+            for pattern in "${FLAGGED_PATTERNS[@]}"; do
+              MATCHES=$(grep -rEil "$pattern" "$folder" --include="*.html" --include="*.md" 2>/dev/null || true)
+              if [ -n "$MATCHES" ]; then
+                IP_VIOLATIONS+=("Flagged name '$pattern' found in: $MATCHES")
+              fi
+            done
+          done <<< "${{ steps.changed.outputs.game_folders }}"
+
+          # Deduplicate
+          IFS=$'\n' IP_VIOLATIONS=($(printf '%s\n' "${IP_VIOLATIONS[@]}" | sort -u))
+
+          if [ ${#IP_VIOLATIONS[@]} -gt 0 ]; then
+            echo "FAIL: IP-flagged game name(s) detected:"
+            printf '%s\n' "${IP_VIOLATIONS[@]}"
+            echo "ip_names_ok=false" >> $GITHUB_OUTPUT
+            {
+              echo "ip_violations<<EOF"
+              printf '%s\n' "${IP_VIOLATIONS[@]}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "PASS: No IP-flagged game names detected"
+            echo "ip_names_ok=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Post PR comment with results
         if: always()
         uses: actions/github-script@v7
@@ -199,13 +250,15 @@ jobs:
           INDEX_HTML_ERRORS: ${{ steps.check_index_html.outputs.index_html_errors }}
           VIOLATIONS: ${{ steps.check_self_contained.outputs.violations }}
           SECRETS_FOUND: ${{ steps.check_secrets.outputs.secrets_found }}
+          IP_VIOLATIONS: ${{ steps.check_ip_names.outputs.ip_violations }}
         with:
           script: |
             const agentMdOk = '${{ steps.check_agent_md.outputs.agent_md_ok }}' === 'true';
             const selfContainedOk = '${{ steps.check_self_contained.outputs.self_contained_ok }}' === 'true';
             const secretsOk = '${{ steps.check_secrets.outputs.secrets_ok }}' === 'true';
+            const ipNamesOk = '${{ steps.check_ip_names.outputs.ip_names_ok }}' === 'true';
             const indexHtmlOk = '${{ steps.check_index_html.outputs.index_html_ok }}' === 'true';
-            const allPassed = agentMdOk && selfContainedOk && secretsOk && indexHtmlOk;
+            const allPassed = agentMdOk && selfContainedOk && secretsOk && indexHtmlOk && ipNamesOk;
 
             const tick = '✅';
             const cross = '❌';
@@ -215,6 +268,7 @@ jobs:
             const indexHtmlErrors = process.env.INDEX_HTML_ERRORS || '';
             const violations = process.env.VIOLATIONS || '';
             const secretsFound = process.env.SECRETS_FOUND || '';
+            const ipViolations = process.env.IP_VIOLATIONS || '';
 
             const body = `## 🎮 PR Validation Results
 
@@ -224,6 +278,7 @@ jobs:
             | \`index.html\` present & valid | ${indexHtmlOk ? tick + ' Pass' : cross + ' Fail'} |
             | Self-contained (no tracking/bad CDNs) | ${selfContainedOk ? tick + ' Pass' : cross + ' Fail'} |
             | No secrets/tokens committed | ${secretsOk ? tick + ' Pass' : cross + ' Fail'} |
+            | No IP-flagged game names | ${ipNamesOk ? tick + ' Pass' : cross + ' Fail'} |
 
             ${allPassed ? '**All checks passed! 🎉**' : '**One or more checks failed. Please fix before merging.**'}
 
@@ -231,6 +286,7 @@ jobs:
             ${!indexHtmlOk && indexHtmlErrors ? '\n### index.html Issues\n```\n' + indexHtmlErrors + '\n```' : ''}
             ${!selfContainedOk && violations ? '\n### Disallowed External Dependencies\n```\n' + violations + '\n```' : ''}
             ${!secretsOk && secretsFound ? '\n### Possible Secrets Detected\n```\n' + secretsFound + '\n```' : ''}
+            ${!ipNamesOk && ipViolations ? '\n### ⚠️ IP Risk: Flagged Game Name\n> This game name is flagged for trademark/copyright risk. Ming\'s approval is required before this PR can be merged. Please rename the game and resubmit, or contact @MingHsuanLee for review.\n\n**Details:**\n```\n' + ipViolations + '\n```' : ''}
             `;
 
             github.rest.issues.createComment({
@@ -245,7 +301,8 @@ jobs:
           steps.check_agent_md.outputs.agent_md_ok != 'true' ||
           steps.check_index_html.outputs.index_html_ok != 'true' ||
           steps.check_self_contained.outputs.self_contained_ok != 'true' ||
-          steps.check_secrets.outputs.secrets_ok != 'true'
+          steps.check_secrets.outputs.secrets_ok != 'true' ||
+          steps.check_ip_names.outputs.ip_names_ok != 'true'
         run: |
           echo "One or more validation checks failed."
           exit 1
@@ -272,7 +329,7 @@ jobs:
           PR: [${PR_TITLE}](${PR_URL})
           Author: @${PR_AUTHOR}
 
-          One or more checks failed — AGENT.md missing, disallowed CDN/tracking, or possible secrets detected.
+          One or more checks failed — AGENT.md missing, disallowed CDN/tracking, possible secrets detected, or IP-flagged game name found.
           Please review the PR."
 
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \

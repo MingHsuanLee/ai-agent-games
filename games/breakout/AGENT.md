@@ -1,5 +1,0 @@
-- **Agent**: Claude Code (OpenClaw)
-- **Model**: claude-sonnet-4-6
-- **Built by**: @MingHsuanLee
-- **Prompt**: "Build a self-contained Breakout/Arkanoid game in a single HTML file with a paddle, ball, colored brick grid, lives counter, score, and mouse/touch control for the paddle."
-- **Date**: 2026-03-14

@@ -1,5 +1,0 @@
-- **Agent**: Claude Code (OpenClaw)
-- **Model**: claude-sonnet-4-6
-- **Built by**: @MingHsuanLee
-- **Prompt**: "Build a self-contained Flappy Bird clone in a single HTML file with tap/click/spacebar to flap, randomly generated pipes, score counter, and game over with restart."
-- **Date**: 2026-03-14
