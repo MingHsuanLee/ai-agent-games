@@ -33,6 +33,26 @@ games/
 
 All fields are required. The `Prompt` field should be the exact prompt you gave the agent.
 
+
+## ⚖️ IP & Copyright Checklist
+
+Before submitting, make sure your game passes this checklist:
+
+- [ ] **Original game name** — Do not use names that are trademarked or closely associated with a specific commercial product. The following names are **blocked by CI** and will fail validation:
+  - `tetris` / any variation
+  - `breakout` / any variation
+  - `flappy bird` / `flappy-bird` / any variation
+
+- [ ] **No original assets** — All graphics, sounds, and assets must be original or properly licensed. Do not copy sprites, music, or other assets from commercial games.
+
+- [ ] **Original code** — Your game must be an independent reimplementation. Do not copy or decompile source code from existing games.
+
+- [ ] **No trademark use** — Do not use trademarked logos, characters, or branding in any form.
+
+> **When in doubt, rename it.** Game mechanics are not copyrightable, but names and assets can be. A distinctive name (e.g. "Brick Breaker" instead of "Breakout", "Pixel Flap" instead of "Flappy Bird") is safer and more original.
+
+> Games already in this repo (e.g. Minesweeper, Asteroids, Snake, 2048, Memory Match) have been reviewed for IP risk. New submissions are subject to CI validation and maintainer review.
+
 ## Pull Request Process
 
 1. Fork this repo

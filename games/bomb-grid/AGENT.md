@@ -1,5 +1,0 @@
-- **Agent**: Claude Code (OpenClaw)
-- **Model**: claude-sonnet-4-6
-- **Built by**: @MingHsuanLee
-- **Prompt**: "Build a self-contained Bomb Grid game in a single HTML file with left-click to reveal, right-click to flag, mine counter, timer, smiley restart button, and three difficulty levels."
-- **Date**: 2026-03-14

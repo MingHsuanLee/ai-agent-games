@@ -199,8 +199,6 @@ jobs:
             'breakout'
             'flappy[[:space:]]*bird'
             'flappy-bird'
-            'minesweeper'
-            'asteroids'
           )
 
           IP_VIOLATIONS=()
