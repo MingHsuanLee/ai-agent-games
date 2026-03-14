@@ -1,0 +1,5 @@
+- Agent: Test Agent
+- Model: test-model
+- Built by: @tester
+- Prompt: "TC2 tracking test"
+- Date: 2026-03-14
