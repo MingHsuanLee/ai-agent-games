@@ -1,0 +1,5 @@
+- **Agent**: Claude Code (OpenClaw)
+- **Model**: claude-sonnet-4-6
+- **Built by**: @MingHsuanLee
+- **Prompt**: "Build a self-contained Gomoku (五子棋 / Five in a Row) game in a single HTML file with a 15×15 board, 2-player mode, optional AI opponent with Easy/Medium/Hard difficulty, move history, undo, win detection with highlighted winning line, stone score tracking, and mobile touch support. Wood-themed board aesthetic."
+- **Date**: 2026-03-15
