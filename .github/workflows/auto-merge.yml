@@ -1,104 +1,25 @@
-name: Auto-Merge on Passing Checks
+name: Auto Merge
 
 on:
-  workflow_run:
-    workflows: ["PR Validation"]
+  pull_request_review:
+    types: [submitted]
+  check_suite:
     types: [completed]
 
 jobs:
-  auto-merge:
-    name: Auto-merge if all checks pass
+  automerge:
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
-    permissions:
-      pull-requests: write
-      contents: write
-
     steps:
-      - name: Find associated PR
-        id: find_pr
-        uses: actions/github-script@v7
-        with:
-          result-encoding: string
-          script: |
-            const headSha = '${{ github.event.workflow_run.head_sha }}';
-            const prs = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              sort: 'updated',
-              direction: 'desc',
-              per_page: 20
-            });
-            const pr = prs.data.find(p => p.head.sha === headSha);
-            if (!pr) {
-              core.setFailed('No open PR found for this commit');
-              return '';
-            }
-            core.setOutput('pr_number', String(pr.number));
-            return String(pr.number);
-
-      - name: Wait for required status checks to propagate
-        if: steps.find_pr.outputs.pr_number != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            // Bug #4 fix: workflow_run completion fires before the check run status
-            // is registered on the PR commit. Poll until the required check appears
-            // and is marked 'completed', or time out after 2 minutes.
-            const headSha = '${{ github.event.workflow_run.head_sha }}';
-            const requiredCheck = 'Validate Game Submission';
-            const maxWaitMs = 120_000;
-            const pollMs = 8_000;
-            const deadline = Date.now() + maxWaitMs;
-
-            console.log(`Waiting for check '${requiredCheck}' on ${headSha}...`);
-
-            while (Date.now() < deadline) {
-              const { data } = await github.rest.checks.listForRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: headSha,
-                per_page: 50,
-              });
-
-              const check = data.check_runs.find(r => r.name === requiredCheck);
-              if (check) {
-                console.log(`Check found: status=${check.status} conclusion=${check.conclusion}`);
-                if (check.status === 'completed') {
-                  if (check.conclusion === 'success') {
-                    console.log('Check passed — proceeding to merge.');
-                    return;
-                  } else {
-                    core.setFailed(`Required check '${requiredCheck}' completed with: ${check.conclusion}`);
-                    return;
-                  }
-                }
-                console.log(`Check not yet complete (${check.status}), waiting ${pollMs}ms...`);
-              } else {
-                console.log(`Check '${requiredCheck}' not yet registered, waiting ${pollMs}ms...`);
-              }
-
-              await new Promise(r => setTimeout(r, pollMs));
-            }
-
-            core.setFailed(`Timed out waiting for check '${requiredCheck}' to complete.`);
-
-      - name: Merge PR
-        if: steps.find_pr.outputs.pr_number != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = parseInt('${{ steps.find_pr.outputs.pr_number }}');
-            try {
-              await github.rest.pulls.merge({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber,
-                merge_method: 'squash',
-                commit_title: `Auto-merge PR #${prNumber} (all checks passed)`,
-              });
-              console.log(`PR #${prNumber} successfully auto-merged.`);
-            } catch (err) {
-              core.setFailed(`Failed to merge PR #${prNumber}: ${err.message}`);
-            }
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Auto-merge
+        uses: "pascalgn/automerge-action@v0.16.2"
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          MERGE_LABELS: ""
+          MERGE_METHOD: "squash"
+          MERGE_COMMIT_MESSAGE: "pull-request-title-and-description"
+          MERGE_DELETE_BRANCH: "true"
+          MERGE_RETRIES: "10"
+          MERGE_RETRY_SLEEP: "10000"
